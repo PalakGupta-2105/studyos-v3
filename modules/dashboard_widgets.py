@@ -2,37 +2,65 @@ import streamlit as st
 import datetime
 from modules.tools import generate_formula_codex, render_mistake_notebook
 
-def calculate_brain_battery(subject_data):
-    """Calculates Retention Health (0-100%)."""
-    health = 100
-    last_rev_date = None
-    
-    def find_latest_date(data):
-        nonlocal last_rev_date
-        if isinstance(data, dict):
-            if "revision_history" in data and data["revision_history"]:
-                last = data["revision_history"][-1]["date"]
-                try:
-                    d_obj = datetime.datetime.strptime(last, "%Y-%m-%d %H:%M").date()
-                except:
-                    try: 
-                        d_obj = datetime.datetime.strptime(last, "%Y-%m-%d").date()
-                    except: 
-                        d_obj = datetime.date.today()
-                
-                if last_rev_date is None or d_obj > last_rev_date:
-                    last_rev_date = d_obj
-            for key, val in data.items():
-                if isinstance(val, dict): 
-                    find_latest_date(val)
+import math
+from typing import Optional, List, Dict, Any
 
-    find_latest_date(subject_data)
-    if last_rev_date:
-        days_gap = (datetime.date.today() - last_rev_date).days
-        health = max(0, 100 - (days_gap * 10)) 
-    else: 
-        health = 0
-    return health
+def calculate_brain_battery(data: Dict[str, Any]) -> int:
+    """
+    Calculates retention score using Spaced Repetition (Exponential Decay).
+    Formula: R = exp(-t / S)
+    """
+    history = data.get("revision_history", [])
+    
+    # Helper to parse dates
+    def _parse_date(item) -> Optional[datetime.date]:
+        if isinstance(item, dict):
+            ds = item.get("date")
+        else:
+            ds = item
+        if not isinstance(ds, str):
+            return None
+        try:
+            y, m, d = map(int, ds.split("-"))
+            return datetime.date(y, m, d)
+        except Exception:
+            return None
+
+    # 1. Extract valid dates
+    dates = [dt for dt in (_parse_date(x) for x in history) if dt is not None]
+    
+    if not dates:
+        return 0
+
+    # 2. Determine Stability (S) based on count of revisions
+    n_revisions = len(dates)
+    last_rev = max(dates)
+    
+    if n_revisions == 1:
+        S = 1.0  # Weak memory
+    elif n_revisions == 2:
+        S = 3.0
+    elif n_revisions == 3:
+        S = 7.0
+    else:
+        # Strong memory: doubles each time (14, 28, 56...)
+        S = 7.0 * (2 ** (n_revisions - 3))
+        S = min(S, 365.0) # Cap at 1 year
+
+    # 3. Calculate Time Elapsed (t)
+    today = datetime.date.today()
+    t_days = (today - last_rev).days
+    
+    if t_days <= 0:
+        return 100
+
+    # 4. Calculate Exponential Decay
+    # Formula: R = e^(-t/S)
+    retention = math.exp(-t_days / S)
+    
+    # Convert to 0-100 scale
+    score = int(round(retention * 100))
+    return max(0, min(score, 100))
 
 def search_database(data, query, path_prefix=[]):
     """Recursive search."""

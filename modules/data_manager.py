@@ -2,30 +2,134 @@ import json
 import os
 import shutil
 import io
+from functools import lru_cache
 from datetime import datetime  # <--- MAKE SURE YOU ADD THIS IMPORT
+
+import streamlit as st
+from google.api_core.exceptions import GoogleAPIError
+from google.cloud import firestore
 from modules.drive_sync import upload_to_drive, authenticate, delete_file_from_drive
 from googleapiclient.http import MediaIoBaseDownload
 
-DB_FILE = "study_database.json"
 TEMP_DIR = "temp_staging"
 
 TEACHER_DB_FILE = "teacher_profiles.json"
 USER_STATS_FILE = "user_stats.json"
 
+class DataRepository:
+    """Repository abstraction for user data stored in Firestore.
+
+    Consumers call these methods without needing to know the storage backend.
+    """
+
+    def __init__(self, collection_name: str = "users") -> None:
+        self._client = _cached_firestore_client()
+        self._collection = self._client.collection(collection_name)
+
+    def get_all(self) -> dict:
+        """Return all user documents as a dict of {doc_id: data}.
+
+        Fail-safe to an empty dict on errors.
+        """
+        try:
+            docs = self._collection.stream()
+        except GoogleAPIError as e:
+            print(f"Could not load data from Firestore: {e}")
+            return {}
+        except Exception as e:
+            print(f"Unexpected error loading Firestore data: {e}")
+            return {}
+
+        data: dict = {}
+        for doc in docs:
+            data[doc.id] = doc.to_dict() or {}
+        return data
+
+    def get_student_data(self, student_id: str) -> dict:
+        """Return a single student's document by id, or {} if missing."""
+        try:
+            snap = self._collection.document(str(student_id)).get()
+            return snap.to_dict() or {}
+        except GoogleAPIError as e:
+            print(f"Could not read student '{student_id}' from Firestore: {e}")
+            return {}
+        except Exception as e:
+            print(f"Unexpected error reading student '{student_id}': {e}")
+            return {}
+
+    def save_student_data(self, student_id: str, payload: dict) -> None:
+        """Upsert a single student's document."""
+        if not isinstance(payload, dict):
+            raise ValueError("save_student_data expects a dictionary payload.")
+        try:
+            self._collection.document(str(student_id)).set(payload or {})
+        except GoogleAPIError as e:
+            print(f"Could not save student '{student_id}' to Firestore: {e}")
+        except Exception as e:
+            print(f"Unexpected error saving student '{student_id}': {e}")
+
+    def save_all(self, data: dict) -> None:
+        """Batch-write all docs from a dict and remove stale ones.
+
+        Input shape: {doc_id: payload_dict}
+        """
+        if not isinstance(data, dict):
+            raise ValueError("save_all expects a dictionary payload.")
+
+        try:
+            existing_ids = {doc.id for doc in self._collection.stream()}
+        except GoogleAPIError as e:
+            print(f"Could not retrieve existing Firestore documents: {e}")
+            existing_ids = set()
+        except Exception as e:
+            print(f"Unexpected error while reading Firestore documents: {e}")
+            existing_ids = set()
+
+        incoming_ids = {str(key) for key in data.keys()}
+        batch = self._client.batch()
+
+        # Upserts
+        for doc_id, payload in data.items():
+            doc_ref = self._collection.document(str(doc_id))
+            batch.set(doc_ref, payload or {})
+
+        # Deletes for stale docs
+        for stale_id in existing_ids - incoming_ids:
+            batch.delete(self._collection.document(stale_id))
+
+        try:
+            batch.commit()
+        except GoogleAPIError as e:
+            print(f"Could not save data to Firestore: {e}")
+        except Exception as e:
+            print(f"Unexpected error committing Firestore batch: {e}")
+
+def _get_firestore_client():
+    """Returns a cached Firestore client configured via Streamlit secrets."""
+    credentials = st.secrets.get("gcp_service_account")
+    if credentials:
+        return firestore.Client.from_service_account_info(dict(credentials))
+
+    project_id = st.secrets.get("gcp_project_id")
+    if project_id:
+        return firestore.Client(project=project_id)
+
+    return firestore.Client()
+
+
+@lru_cache(maxsize=1)
+def _cached_firestore_client():
+    return _get_firestore_client()
+
+
 def load_data():
-    """Loads the database structure."""
-    if not os.path.exists(DB_FILE):
-        return {}
-    try:
-        with open(DB_FILE, 'r') as f:
-            return json.load(f)
-    except:
-        return {}
+    """Backward-compatible loader: delegates to DataRepository.get_all()."""
+    return DataRepository().get_all()
+
 
 def save_data(data):
-    """Saves the JSON database."""
-    with open(DB_FILE, 'w') as f:
-        json.dump(data, f, indent=4)
+    """Backward-compatible saver: delegates to DataRepository.save_all()."""
+    return DataRepository().save_all(data)
 
 def clean_temp_folder():
     """Wipes the temp folder to ensure 0 storage usage on D:"""

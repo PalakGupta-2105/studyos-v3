@@ -1,0 +1,68 @@
+{
+    "GATE 2027": {
+        "Signals & Systems": {
+            "type": "folder",
+            "Unit 1: Basics": {
+                "type": "folder",
+                "Lec 01: Intro to Signals": {
+                    "type": "lecture",
+                    "revision_history": [
+                        {
+                            "date": "2025-12-27",
+                            "time_taken": "30m",
+                            "status": "Completed"
+                        },
+                        {
+                            "date": "2025-12-27",
+                            "material": "\ud83d\udcdd Short Notes",
+                            "time_taken": "10m",
+                            "status": "Completed"
+                        },
+                        {
+                            "date": "2025-12-27",
+                            "material": "\ud83d\udcdd Short Notes",
+                            "time_taken": "1m",
+                            "status": "Completed"
+                        }
+                    ],
+                    "confidence": 0,
+                    "flashcards": {
+                        "total": 0,
+                        "due": 0
+                    },
+                    "notes_date": "Not Added",
+                    "tasks": []
+                }
+            }
+        }
+    },
+    "UPSC CSE": {
+        "type": "folder"
+    },
+    "UPSC": {
+        "type": "folder",
+        "GS Subjects": {
+            "type": "folder",
+            "History ": {
+                "type": "folder"
+            },
+            "lecture 1": {
+                "type": "lecture",
+                "revision_history": [
+                    {
+                        "date": "2025-12-27",
+                        "time_taken": "30m",
+                        "status": "Completed"
+                    }
+                ],
+                "confidence": 0,
+                "flashcards": {
+                    "total": 0,
+                    "due": 0
+                },
+                "notes_date": "Not Added",
+                "tasks": []
+            }
+        }
+    }
+}

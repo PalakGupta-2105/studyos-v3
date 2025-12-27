@@ -1,0 +1,1 @@
+- [x] Update Firestore integration in modules/data_manager.py
